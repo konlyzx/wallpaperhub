@@ -1,0 +1,12 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+downloads/
+backend/static/wallpapers/*
+config.json
+*.db
+build/
+*.exe
