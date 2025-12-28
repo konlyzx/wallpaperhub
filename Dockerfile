@@ -12,7 +12,8 @@ RUN apt-get update && apt-get install -y \
 
 # Copiar requerimientos y el código
 COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir --retries 10 --timeout 60 -r requirements.txt
 
 # Copiar todo el contenido de la carpeta backend al contenedor
 COPY backend/ ./backend/

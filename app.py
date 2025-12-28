@@ -97,9 +97,12 @@ class ImageWallpaper(QWidget):
         hwnd = int(self.winId())
         user32.SetParent(hwnd, parent_hwnd)
         style = user32.GetWindowLongW(hwnd, -16)
-        user32.SetWindowLongW(hwnd, -16, style | 0x40000000)
+        user32.SetWindowLongW(hwnd, -16, style | 0x40000000 | 0x10000000)
         user32.ShowWindow(hwnd, 5)
         return True
+
+    def toggle_pause(self):
+        return False
 
     def update_geometry(self):
         screen = QApplication.primaryScreen().geometry()
@@ -135,10 +138,18 @@ class GifWallpaper(QWidget):
         hwnd = int(self.winId())
         user32.SetParent(hwnd, parent_hwnd)
         style = user32.GetWindowLongW(hwnd, -16)
-        user32.SetWindowLongW(hwnd, -16, (style | 0x40000000) & ~0x00800000)
+        user32.SetWindowLongW(hwnd, -16, (style | 0x40000000 | 0x10000000) & ~0x00800000)
         user32.ShowWindow(hwnd, 5)
         self.movie.start()
         return True
+
+    def toggle_pause(self):
+        if self.movie.state() == QMovie.Running:
+            self.movie.setPaused(True)
+            return True
+        else:
+            self.movie.setPaused(False)
+            return False
 
     def update_geometry(self):
         screen = QApplication.primaryScreen().geometry()
@@ -190,9 +201,9 @@ class VideoWallpaper(QWidget):
         hwnd = int(self.winId())
         
         # PASO 2: Configurar estilos Win32 ANTES de que sea totalmente visible
-        # WS_CHILD | WS_VISIBLE (0x40000000 | 0x10000000)
+        # WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS
         style = user32.GetWindowLongW(hwnd, -16)
-        user32.SetWindowLongW(hwnd, -16, (style | 0x40000000 | 0x10000000) & ~0x00800000) # WS_CHILD | WS_VISIBLE, sin bordes
+        user32.SetWindowLongW(hwnd, -16, (style | 0x40000000 | 0x10000000 | 0x02000000 | 0x04000000) & ~0x00800000)
         
         # PASO 3: Realizar el anclaje (SetParent)
         user32.SetParent(hwnd, parent_hwnd)
@@ -203,16 +214,24 @@ class VideoWallpaper(QWidget):
         self.video_widget.setGeometry(0, 0, screen_geometry.width(), screen_geometry.height())
         
         # PASO 5: Forzar actualización de posición y visibilidad en Win32
-        # SWP_SHOWWINDOW = 0x0040
+        # SWP_SHOWWINDOW | SWP_NOZORDER | SWP_FRAMECHANGED
         user32.SetWindowPos(hwnd, 0, 0, 0, 
                            screen_geometry.width(), 
                            screen_geometry.height(), 
-                           0x0040)
+                           0x0040 | 0x0020)
         
         # PASO 6: Reproducir con un ligero delay para que el parent se asiente
-        print(f"DEBUG: Video anclado a WorkerW {hex(parent_hwnd)} - Geometría: {screen_geometry.width()}x{screen_geometry.height()}")
+        print(f"DEBUG: Video anclado a WorkerW {hex(parent_hwnd)}")
         QTimer.singleShot(200, self.media_player.play)
         return True
+
+    def toggle_pause(self):
+        if self.media_player.playbackState() == QMediaPlayer.PlayingState:
+            self.media_player.pause()
+            return True
+        else:
+            self.media_player.play()
+            return False
 
     def update_geometry(self):
         screen = QApplication.primaryScreen().geometry()
@@ -316,30 +335,20 @@ class WallpaperCard(QFrame):
         self.btn_action.move(155, 5)
 
     def download_clicked(self):
-        parent = self.parent()
-        while parent:
-            if hasattr(parent, 'download_wallpaper'):
-                parent.download_wallpaper(self.path, self.label.text())
-                break
-            parent = parent.parent()
+        main_win = QApplication.activeWindow()
+        if hasattr(main_win, 'download_wallpaper'):
+            main_win.download_wallpaper(self.path, self.label.text())
 
     def delete_clicked(self):
-        parent = self.parent()
-        while parent:
-            if hasattr(parent, 'remove_wallpaper'):
-                parent.remove_wallpaper(self.path, self)
-                break
-            parent = parent.parent()
+        main_win = QApplication.activeWindow()
+        if hasattr(main_win, 'remove_wallpaper'):
+            main_win.remove_wallpaper(self.path, self)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            # Encontrar el MainWindow recorriendo hacia arriba
-            parent = self.parent()
-            while parent:
-                if hasattr(parent, 'apply_wallpaper'):
-                    parent.apply_wallpaper(self.path)
-                    break
-                parent = parent.parent()
+            main_win = QApplication.activeWindow()
+            if hasattr(main_win, 'apply_wallpaper'):
+                main_win.apply_wallpaper(self.path)
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -592,6 +601,11 @@ class MainWindow(QMainWindow):
         
         status_layout.addStretch()
         
+        self.btn_pause = QPushButton("Pause")
+        self.btn_pause.clicked.connect(self.toggle_pause)
+        self.btn_pause.setStyleSheet("background: #444; color: white; padding: 8px 20px; border-radius: 4px; margin-right: 10px;")
+        status_layout.addWidget(self.btn_pause)
+
         self.btn_stop = QPushButton("Stop")
         self.btn_stop.clicked.connect(self.stop_wallpaper)
         self.btn_stop.setStyleSheet("background: #333; color: white; padding: 8px 20px; border-radius: 4px;")
@@ -609,7 +623,8 @@ class MainWindow(QMainWindow):
         self.config_file = "config.json"
         
         # API Configuration
-        self.api_base_url = "http://localhost:8000" # Cambiar a la URL de Render cuando se publique
+        # Cambia esto por tu URL de Koyeb (ej: "https://tu-app.koyeb.app")
+        self.api_base_url = "http://localhost:8000" 
         
         self.load_config()
         
@@ -869,6 +884,9 @@ class MainWindow(QMainWindow):
             # Inyectar y forzar posición
             if self.wallpaper_window.start(self.workerw):
                 hwnd = int(self.wallpaper_window.winId())
+                # Forzar al fondo de la pila de ventanas hijas del WorkerW
+                # 0x0040 = SWP_SHOWWINDOW, 0x0001 = SWP_NOSIZE, 0x0002 = SWP_NOMOVE
+                # HWND_BOTTOM = 1
                 user32.SetWindowPos(hwnd, 1, 0, 0, 0, 0, 0x0040 | 0x0001 | 0x0002)
                 
                 self.current_title.setText(os.path.basename(path))
@@ -914,6 +932,11 @@ class MainWindow(QMainWindow):
             if self.col_count > 3:
                 self.col_count = 0
                 self.row_count += 1
+
+    def toggle_pause(self):
+        if self.wallpaper_window and hasattr(self.wallpaper_window, 'toggle_pause'):
+            is_paused = self.wallpaper_window.toggle_pause()
+            self.btn_pause.setText("Resume" if is_paused else "Pause")
 
     def stop_wallpaper(self):
         if self.wallpaper_window:
