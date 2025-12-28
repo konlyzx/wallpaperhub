@@ -23,11 +23,12 @@ app.add_middleware(
 )
 
 # Directorios para archivos
-UPLOAD_DIR = "backend/static/wallpapers"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_DIR = os.path.join(BASE_DIR, "static", "wallpapers")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # Servir archivos estáticos
-app.mount("/static", StaticFiles(directory="backend/static"), name="static")
+app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 
 @app.get("/")
 def read_root():

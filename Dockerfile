@@ -23,6 +23,7 @@ RUN mkdir -p backend/static/wallpapers
 
 # Variable de entorno para el puerto (Koyeb lo requiere)
 ENV PORT=8000
+ENV PYTHONPATH=/app
 
-# Comando de ejecución usando shell para procesar la variable $PORT
-CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port $PORT"]
+# Comando de ejecución (forma de shell para expansión de variables)
+CMD uvicorn backend.main:app --host 0.0.0.0 --port $PORT
